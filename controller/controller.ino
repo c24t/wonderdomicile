@@ -7,12 +7,12 @@
 User defines
 ***************************/
 /* wonderdomicile config */
-#define NUM_LEDS_PER_STRIP 143
-#define NUM_STRIPS 8
+/* #define NUM_LEDS_PER_STRIP 143 */
+/* #define NUM_STRIPS 8 */
 
 /* strips config */
-/* #define NUM_LEDS_PER_STRIP 200 */
-/* #define NUM_STRIPS 2 */
+#define NUM_LEDS_PER_STRIP 200
+#define NUM_STRIPS 4
 
 #define MAX_BRIGHTNESS 255
 #define GLOBAL_BRIGHTNESS 255

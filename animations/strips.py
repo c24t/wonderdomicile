@@ -9,7 +9,7 @@ import bibliopixel as bp
 
 # Cheating to avoid passing layout to sub-animations
 WIDTH = 200
-HEIGHT = 2
+HEIGHT = 4
 
 
 def now_us():

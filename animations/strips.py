@@ -7,12 +7,19 @@ import time
 from bibliopixel.animation.matrix import Matrix
 import bibliopixel as bp
 
+# Cheating to avoid passing layout to sub-animations
+WIDTH = 200
+HEIGHT = 2
+
+
+def now_us():
+    return int(time.time() * 1000000)
 
 class Clock:
     """BPM clock to sync animations to music."""
     def __init__(self, bpm, multiple):
         self.set_bpm_attrs(bpm, multiple)
-        self._reltime = self._last_zero_time = int(time.time() * 1000)
+        self._reltime = self._last_zero_time = now_us()
         self._frac = 0
 
     def set_bpm_attrs(self, bpm, multiple):
@@ -57,7 +64,7 @@ class Clock:
 
         This updates:
             _frac: how far we are into the current beat-multiple
-            _reltime: the current time in ms mod _usbpm, used to calculate
+            _reltime: the current time in us mod _usbpm, used to calculate
                       _frac
             _last_reltime: _reltime as of the last update
             _last_zero_time: the (interpolated) timestamp of the last
@@ -66,7 +73,7 @@ class Clock:
                              we want to move smoothly between nearby bpms.
         """
         self._last_reltime = self._reltime
-        now = int(time.time() * 1000000)
+        now = now_us()
         self._reltime = (now - self._last_zero_time) % self._usbpm
         if self._reltime < self._last_reltime:
             self._last_zero_time = now - self._reltime
@@ -84,10 +91,8 @@ class Looperball:
         self._clock = clock
         self._hue = hue
 
-        self.width = 200
-        self.height = 2
-        self._hsvs = [[(0, 0, 0) for i in range(self.width)] for j in
-                      range(self.height)]
+        self._hsvs = [[(0, 0, 0) for i in range(WIDTH)]
+                      for j in range(HEIGHT)]
         self._embers = {}
         self._ef_hi = 1.1
         self._ef_lo = .65
@@ -98,53 +103,53 @@ class Looperball:
 
     def step(self):
         # draw the fireball, overwriting still-flickering embers if necessary
-        head = int(self._clock.frac * self.width)
+        head = int(self._clock.frac * WIDTH)
         # print("head: {}\t #embers: {}".format(head, len(self._embers)))
         for ll in range(self._length):
             w = head - ll
             # don't let negative width indexes leak through
             if w < 0:
-                w = self.width + w
+                w = WIDTH + w
             b = 255 - 10 * ll
-            for strip in range(self.height):
+            for strip in range(HEIGHT):
                 self._hsvs[strip][w] = (self._hue, 255, b)  # TODO: palette
 
         # clear the last pixel behind the tail
         blank = head - self._length
         if blank < 0:
-            blank = self.width + blank
+            blank = WIDTH + blank
         # print("head: {}\tblank: {}\tfrac:{}".format(head, blank, self._clock.frac))
-        for strip in range(self.height):
+        for strip in range(HEIGHT):
             self._hsvs[strip][blank] = (self._hue, 255, 0)  # TODO: palette
         if self._last_blank < blank - 1:
             for ob in range(self._last_blank, blank):
-                for strip in range(self.height):
+                for strip in range(HEIGHT):
                     self._hsvs[strip][ob] = (self._hue, 255, 0)  # TODO: palette
         # might have looped, blank the end and beginning of both strips
         elif self._last_blank > blank:
-            for ob in range(self._last_blank, self.width):
-                for strip in range(self.height):
+            for ob in range(self._last_blank, WIDTH):
+                for strip in range(HEIGHT):
                     self._hsvs[strip][ob] = (self._hue, 255, 0)  # TODO: palette
             for ob in range(0, blank):
-                for strip in range(self.height):
+                for strip in range(HEIGHT):
                     self._hsvs[strip][ob] = (self._hue, 255, 0)  # TODO: palette
         self._last_blank = blank
 
         # start a new ember at the head and any pixels we skipped over since
         # the last update
-        for strip in range(self.height):
+        for strip in range(HEIGHT):
             self._embers[(strip, head)] = [self._hue, 255, 255]  # TODO
         if self._last_head < head - 1:
             for ob in range(self._last_head, head):
-                for strip in range(self.height):
+                for strip in range(HEIGHT):
                     self._embers[(strip, ob)] = [self._hue, 255, 255]  # TODO
         # might have looped, ignite the end and beginning of both strips
         elif self._last_head > head:
-            for ob in range(self._last_head, self.width):
-                for strip in range(self.height):
+            for ob in range(self._last_head, WIDTH):
+                for strip in range(HEIGHT):
                     self._embers[(strip, head)] = [self._hue, 255, 255]  # TODO
             for strip in range(0, head):
-                for strip in range(self.height):
+                for strip in range(HEIGHT):
                     self._embers[(strip, head)] = [self._hue, 255, 255]  # TODO
         self._last_head = head
 
@@ -163,6 +168,227 @@ class Looperball:
                               random.random()))))
                 self._hsvs[k[0]][k[1]] = self._embers[k]
         return self._hsvs
+
+
+class Fireball:
+    def __init__(self, us, length=10, hue=0):
+        self._us = int(us)
+        self._length = length
+        self._hue = hue
+        now = now_us()
+
+        self._hsvs = [[0, 0, 0] for px in range(WIDTH)]
+        # when to light up each pixel in the strip, we need timestamps beyone
+        # the end of the strip to draw the tail
+        self._when = [now + x * us // (WIDTH + self._length)
+                      for x in range(WIDTH + self._length)]
+        # print(now)
+        # print(self._when)
+
+        # how much to change the starting color over WIDTH pixels, 255 (or
+        # -255) to go full rainbow
+        # self._rotate_color = 255
+        # self._rcm = self._rotate_color / WIDTH
+        # print(self._rcm)
+        # print([(self._hue + int(self._rcm * w)) % 255 for w in range(WIDTH)])
+
+        # self._tail_min_brightness = 100
+        self._tail_min_brightness = 0
+        self._tail_bright = [255 - int(x / (self._length - 1) *
+                                       (255 - self._tail_min_brightness))
+                             for x in range(self._length)]
+
+        self._tail_change = 80
+        self._tail_color = [int(x / (self._length - 1) * self._tail_change)
+                            for x in range(self._length)]
+
+        self._embers = {}
+        self._ef_hi = 1.5
+        self._ef_lo = .35
+        # self._ember_update_rate = .75
+        self._ember_update_rate = 1
+
+        ### problems
+        # embers apply from head, look weird
+        #
+        # update_rate 1 looks nice, but there are no embers, make sure to keep
+        # as option
+        #
+        ### problems
+
+        self._last_head = 0
+        self._last_blank = 0
+        self._gone = False
+        self._ded = False
+
+    def _get_color(self, b, w=0, ll=0):
+        """
+        b: brightness
+        w: pixel pos on the strip
+        ll: position in tail in [0, self._length)
+        """
+        # hue = (self._hue + int(self._rcm * w)) % 255
+        # hue = self._hue
+        # hue = (self._hue + w) % 255
+        # hue = (self._hue + 2 * ll) % 255
+        hue = (self._hue + self._tail_color[ll]) % 255
+        return (hue, 255, b)
+
+    # def _get_ember_color(self, ):
+    #     return (self._hue, 255, b)
+
+    def _mod_ember_color(self, hsv, amount):
+        h, s, v = hsv
+        v = min(255, int(v * amount))
+        return (h, s, v)
+
+    def _get_blank(self):
+        return self._get_color(0)
+
+    def step(self):
+        if self._ded:
+            return None
+
+        # # did we pass the end of the strip in the last update?
+        # if not self._gone and self._last_head > len(self._when):
+        #     # print(self._last_head, self._length, WIDTH)
+        #     self._gone = True
+        # # else:
+        # #     print("step", id(self))
+
+        # only redraw the head if we're still in range of the strip, otherwise
+        # just redraw the embers
+        if not self._gone:
+            now = now_us()
+            head = self._last_head
+            while now > self._when[head]:
+                head += 1
+                if head == len(self._when):
+                    self._gone = True
+                    break
+
+            # draw the head, fading to 0 towards the tail
+            for ll in range(self._length):
+                w = head - ll
+                if 0 < w < WIDTH:
+                    # b = 255 - int(ll * 255 / self._length)
+                    b = self._tail_bright[ll]
+                    self._hsvs[w] = self._get_color(b, w, ll)
+
+            # clear the last pixel behind the tail and any we skipped over
+            # since the last update
+            blank = head - self._length
+            if 0 <= blank < WIDTH:
+                for px in range(self._last_blank, blank):
+                    self._hsvs[px] = self._get_blank()
+                    # put an ember in the blank
+                    self._embers[px] = self._get_color(
+                        self._tail_min_brightness, px, self._length - 1)
+                self._last_blank = blank
+
+
+            # # start a new ember burning at the head and any pixels we skipped
+            # # over since the last update
+            # if head < WIDTH:
+            #     self._embers[head] = self._get_color(255)
+            #     if self._last_head < head - 1:
+            #         for px in range(self._last_head, head):
+            #             self._embers[px] = self._get_color(255)
+
+            self._last_head = head
+
+        # clear the dead embers....
+        self._embers = {px: [h, s, v] for px, (h, s, v) in self._embers.items()
+                        if v > 0}
+        # ...and flicker the live ones
+        if self._embers:
+            for px in self._embers:
+                if (self._ember_update_rate != 1 and
+                        random.random() < self._ember_update_rate):
+                    self._embers[px] = self._mod_ember_color(
+                        self._embers[px],
+                        (self._ef_lo + (self._ef_hi - self._ef_lo) *
+                         random.random()))
+
+                    # self._embers[px][2] = \
+                    #     min(255,
+                    #         int(
+                    #             (self._embers[px][2] *
+                    #              (self._ef_lo + (self._ef_hi - self._ef_lo) *
+                    #               random.random()))))
+
+                    self._hsvs[px] = self._embers[px]
+        # if the tail is past the end of the strip we won't be starting any new
+        # embers, this fireball is dead and gone
+        elif self._gone:
+            self._ded = True
+            return None
+
+        return self._hsvs
+
+
+def _blend_hsvs(hsv1, hsv2):
+    h1, s1, v1 = hsv1
+    if v1 == 0:
+        return hsv2
+    h2, s2, v2 = hsv2
+    if v2 == 0:
+        return hsv1
+
+    ratio = v1 / (v1 + v2)
+    if h1 == h2:
+        hn = h1
+    else:
+        diff = (h2 - h1) % 255
+        if diff % 255 <= 128:
+            moveby = int((1 - ratio) * diff)
+            hn = (h1 + moveby) % 255
+        else:
+            diff = 255 - diff
+            moveby = int((1 - ratio) * diff)
+            hn = (h1 - moveby) % 255
+
+    sn = int(ratio * s1 + (1 - ratio) * s2)
+    vn = v1 + v2
+    return (hn, sn, vn)
+
+
+def blend_hsvs(hsvs):
+    """Combine HSVs, winging it"""
+    return reduce(_blend_hsvs, hsvs)
+
+
+class FBLauncher:
+    def __init__(self, clock):
+        self.clock = clock
+        self._balls = []
+        self._last_frac = 0
+
+    def step(self, amt=1):
+        # print(len(self._balls))
+        frac = self.clock.frac
+        # self._balls = [ball for ball in self._balls if not ball._ded]
+        if frac < self._last_frac:
+            if random.random() > .5:
+                self._balls.append(Fireball(self.clock.usbpm * random.randint(1, 10),
+                                            length=random.randint(4, 55),
+                                            hue=random.randint(0, 255)))
+        self._last_frac = frac
+
+        for bb in self._balls:
+            bb.step()
+
+        hsvs_set = [x for x in (ball.step() for ball in self._balls)
+                    if x is not None]
+
+        if hsvs_set:
+
+            hsvs = [blend_hsvs(x) for x in zip(*hsvs_set)]
+
+            # TODO separate strips
+            return [hsvs for h in range(HEIGHT)]
+        else:
+            return None
 
 
 class Flash:
@@ -194,10 +420,10 @@ class Flash:
         ci = self._blink // fpc
         if ci >= len(colors):
             self._blink = None
-            return None
+            return [[(0, 0, 0) for i in range(WIDTH)] for j in range(HEIGHT)]
         hsv = colors[self._blink // fpc]
         self._blink += 1
-        return [[hsv for i in range(200)] for j in range(2)]
+        return [[hsv for i in range(WIDTH)] for j in range(HEIGHT)]
 
 
 class BumpMix:
@@ -231,8 +457,8 @@ class BumpMix:
 
         # print("{}\t{}".format(bright, self.hue))
         # self.layout.fillHSV((self.hue, 255, bright))
-        return [[[self.hue, 255 // 2, bright // 2] for i in range(200)]
-                for j in range(2)]
+        return [[[self.hue, 255 // 2, bright // 2] for i in range(WIDTH)]
+                for j in range(HEIGHT)]
 
 
 def many_hsvs_to_rgb(hsvs):
@@ -274,9 +500,10 @@ class Combo(Matrix):
         self.clock2 = Clock(int(3 / 2 * bpm), 2)
         # self.clock3 = Clock(4 * bpm, 1)
         self.fireballs = [
-            Looperball(5, self.clock, hue=40), 
+            FBLauncher(self.clock),
+            # Looperball(5, self.clock, hue=40),
             # Looperball(5, self.clock2, hue=100),
-            Flash(self.clock2),
+            # Flash(self.clock),
             # Looperball(30, self.clock, hue=200),
         ]
 
@@ -287,6 +514,9 @@ class Combo(Matrix):
 
         hsv_sets = [ball.step() for ball in self.fireballs]
         hsv_sets = [x for x in hsv_sets if x is not None]
+        if not hsv_sets:
+            return
+
         # for ball in self.fireballs:
         #     ball.step()
         # hsvs = Looperball.combine_hsvs(self.fireballs)

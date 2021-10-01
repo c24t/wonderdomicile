@@ -15,8 +15,9 @@ path: ./animations/
 
 animation:
 
-  typename: strips.Mega
-  name: Mega
+animation:
+  typename: strips.Combo
+  name: Combo
   run:
     fps: 60
   palette:

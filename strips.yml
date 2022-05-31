@@ -6,7 +6,8 @@ drivers:
     #gamma: [1.1, 0.5, 0]
     ledtype: WS2811
     typename: .serial
-    dev: /dev/replaceme
+    # dev: /dev/tty.usbmodem60460901
+    dev: /dev/tty.usbmodem60460901
 
 aliases:
   bpa: BiblioPixelAnimations.matrix
@@ -15,16 +16,33 @@ path: ./animations/
 
 animation:
 
-  typename: strips.Mega
-  name: Mega
+animation:
+  typename: strips.Combo
+  name: Combo
   run:
-    fps: 60
+    fps: 100
   palette:
     colors: rainbow
+
+# animation:
+#   typename: strips.Xmas
+#   name: Xmas
+#   run:
+#     fps: 80
+#   palette:
+#     colors: rainbow
+
+# animation:
+#   typename: strips.Embers
+#   name: Combo
+#   run:
+#     fps: 100
+#   palette:
+#     colors: rainbow
 
 layout:
   typename: matrix
   serpentine: false
   width: 200
-  height: 4
+  height: 2
   brightness: 255

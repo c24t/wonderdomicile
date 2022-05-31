@@ -2,7 +2,7 @@
 
 driver:
   typename: simpixel
-  num: 400
+  num: 800
 
 aliases:
   bpa: BiblioPixelAnimations.matrix
@@ -13,13 +13,28 @@ animation:
   typename: strips.Combo
   name: Combo
   run:
-    fps: 60
+    fps: 100
   palette:
     colors: rainbow
+
+# animation:
+#   typename: strips.Xmas
+#   name: Xmas
+#   run:
+#     fps: 100
+#   palette:
+#     colors: rainbow
+
+# layout:
+#   typename: matrix
+#   serpentine: false
+#   width: 200
+#   height: 2
+#   brightness: 255
 
 layout:
   typename: matrix
   serpentine: false
   width: 200
-  height: 2
+  height: 4
   brightness: 255

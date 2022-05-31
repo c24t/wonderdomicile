@@ -1,0 +1,124 @@
+# Actual config for physical project
+
+drivers:
+  - c_order: GRB
+    num: 400
+    #gamma: [1.1, 0.5, 0]
+    ledtype: WS2811
+    typename: .serial
+    dev: /dev/tty.usbmodem60460901
+
+# enables numpy. currently v slow
+#numbers: float
+
+aliases:
+  bpa: BiblioPixelAnimations.matrix
+
+
+path: ./animations/
+
+animation:
+
+  typename: strips.Mega
+  name: Wat
+  run:
+    fps: 60
+  palette:
+    colors: rainbow
+
+  # typename: chase.Embers
+  # name: Wat
+  # run:
+  #   fps: 60
+  # palette:
+  #   colors: red
+
+  # typename: chase.Bump
+  # name: Wat
+  # run:
+  #   fps: 100
+  # palette:
+  #   colors: rainbow
+  # bpm: 80
+  # multiple: 1
+
+  # typename: chase.ChaseChris
+  # name: Wat
+  # run:
+  #   fps: 60
+  # palette:
+  #   colors: rainbow
+  # spacing: 100
+  # lllength: 10
+  # fade: .9
+  # dirrrection: 1
+
+    #- typename: colorwave.Vertical
+    #  name: ColorWaveVertical
+    #  color_distance: 1
+    #  palette:
+    #    colors: rainbow
+
+
+          #- typename: chase.ChaseUp
+          #  name: ChaseUp
+          #  length: 1
+          #  run:
+          #    fps: 1
+          #  palette:
+          #    colors: rainbow
+
+    #- typename: $bpa.MatrixRain.MatrixRain
+    #  run:
+    #    fps: 30
+    #  tail: 1
+    #  growthRate: 1
+    #  palette:
+    #    colors:
+    #      - royal blue 1
+    #- typename: chase.ChaseUp
+    #  name: ChaseUp
+    #  run:
+    #    fps: 20
+    #  spacing: 30
+    #  palette:
+    #    colors: spectrum
+    #- typename: hydropump.HydroPump
+    #  palette:
+    #    colors: rainbow
+    #  fade: 0.5
+    #  pump_speed: 8
+    #  pipe_rate: 2
+    #  gravity: 0.5
+    #- typename: sparkles.Sparkles
+    #  name: Sparkles
+    #  palette:
+    #    colors: van_gogh
+    #- typename: chase.Chase
+    #  name: Chase
+    #  run:
+    #    fps: 20
+    #  spacing: 30
+    #  alternating: 2
+    #  palette:
+    #    colors: rainbow
+    #- typename: colorwave.Vertical
+    #  palette:
+    #    colors: rainbow
+    #  bloom: true
+    #  color_speed: 4
+    #  color_distance: 3
+    #  palette:
+    #    colors: rainbow
+    #- typename: fire.Fire
+    #  name: Fire
+    #  run:
+    #    fps: 60
+    #  palette:
+    #    colors: rainbow
+layout:
+  typename: matrix
+  serpentine: false
+  width: 200
+  height: 2
+  brightness: 255

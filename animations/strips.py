@@ -9,11 +9,13 @@ import bibliopixel as bp
 
 # Cheating to avoid passing layout to sub-animations
 WIDTH = 200
-HEIGHT = 4
+# change this back after xmas?
+HEIGHT = 2
 
 
 def now_us():
     return int(time.time() * 1000000)
+
 
 class Clock:
     """BPM clock to sync animations to music."""
@@ -21,6 +23,15 @@ class Clock:
         self.set_bpm_attrs(bpm, multiple)
         self._reltime = self._last_zero_time = now_us()
         self._frac = 0
+        self._last_fetch = 0
+        self.rc = redis.Redis()
+
+    def fetch(self):
+        ts, bpm = map(int, self.rc.mget("ts", "bpm"))
+        if ts > self._last_fetch:
+            self.set_bpm_attrs(bpm, self.multiple)
+            print("BPM IS {}".format(bpm))
+            self._last_fetch = ts
 
     def set_bpm_attrs(self, bpm, multiple):
         """Update timing args, call to change bpm or multiple.
@@ -72,6 +83,7 @@ class Clock:
                              Note that we can't just use `now % _usbpm` because
                              we want to move smoothly between nearby bpms.
         """
+        self.fetch()
         self._last_reltime = self._reltime
         now = now_us()
         self._reltime = (now - self._last_zero_time) % self._usbpm
@@ -86,24 +98,45 @@ class Clock:
 
 class Looperball:
     """Fireball that loops"""
-    def __init__(self, length, clock, hue=0):
+    def __init__(self, length, clock, hue=0, hue_key="lb_1_hue",
+                 head_off=False):
         self._length = length
         self._clock = clock
         self._hue = hue
+        self._hue_key = hue_key
 
         self._hsvs = [[(0, 0, 0) for i in range(WIDTH)]
                       for j in range(HEIGHT)]
         self._embers = {}
-        self._ef_hi = 1.1
-        self._ef_lo = .65
-        self._ember_update_rate = .5
+        self._ef_hi = 1.2
+        self._ef_lo = .45
+        self._ember_update_rate = .8
+
+        self.head_off = head_off
 
         self._last_head = 0
         self._last_blank = 0
 
+        self._last_fetch = 0
+        self.rc = redis.Redis()
+
+    def fetch(self):
+        ts, hue = map(int, self.rc.mget("ts", self._hue_key))
+        if ts > self._last_fetch:
+            self._hue = hue
+            self._last_fetch = ts
+
     def step(self):
+        self.fetch()
+
         # draw the fireball, overwriting still-flickering embers if necessary
-        head = int(self._clock.frac * WIDTH)
+        if self.head_off:
+            hhh = self._clock.frac + .5
+            if hhh > 1:
+                hhh = hhh - 1
+            head = int(hhh * WIDTH)
+        else:
+            head = int(self._clock.frac * WIDTH)
         # print("head: {}\t #embers: {}".format(head, len(self._embers)))
         for ll in range(self._length):
             w = head - ll
@@ -180,8 +213,8 @@ class Fireball:
         self._hsvs = [[0, 0, 0] for px in range(WIDTH)]
         # when to light up each pixel in the strip, we need timestamps beyone
         # the end of the strip to draw the tail
-        self._when = [now + x * us // (WIDTH + self._length)
-                      for x in range(WIDTH + self._length)]
+        self._when = [now + x * int(us / (WIDTH + self._length))
+                      for x in range(1, WIDTH + self._length + 1)]
         # print(now)
         # print(self._when)
 
@@ -261,6 +294,7 @@ class Fireball:
         if not self._gone:
             now = now_us()
             head = self._last_head
+
             while now > self._when[head]:
                 head += 1
                 if head == len(self._when):
@@ -270,7 +304,7 @@ class Fireball:
             # draw the head, fading to 0 towards the tail
             for ll in range(self._length):
                 w = head - ll
-                if 0 < w < WIDTH:
+                if 0 <= w < WIDTH:
                     # b = 255 - int(ll * 255 / self._length)
                     b = self._tail_bright[ll]
                     self._hsvs[w] = self._get_color(b, w, ll)
@@ -361,34 +395,71 @@ def blend_hsvs(hsvs):
 class FBLauncher:
     def __init__(self, clock):
         self.clock = clock
-        self._balls = []
         self._last_frac = 0
 
+        # self._balls = []
+
+        # self._balls = [[] for x in range(HEIGHT)]
+        # self._hsvs = [[(0, 0, 0) for w in range(WIDTH)] for h in range(HEIGHT)]
+
+        self._balls = [[] for x in range(HEIGHT)]
+
+    # def step(self, amt=1):
+    #     frac = self.clock.frac
+    #     if frac < self._last_frac:
+    #         for bi in range(len(self._balls)):
+    #             self._balls[bi].append(Fireball(self.clock.usbpm * random.randint(1, 10),
+    #                                             length=random.randint(4, 55),
+    #                                             hue=random.randint(0, 255)))
+    #             # for bb in self._balls[bi]:
+    #             #     bb.step()
+    #             self._balls[bi] = [ball for ball in self._balls[bi] if not ball._ded]
+
+    #             hsvs_set = [x for x in (ball.step() for ball in self._balls[bi]) if x is not None]
+    #             hsvs = [blend_hsvs(x) for x in zip(*hsvs_set)]
+    #             self._hsvs[bi] = hsvs
+
+    #     self._last_frac = frac
+    #     return self._hsvs
+
     def step(self, amt=1):
-        # print(len(self._balls))
         frac = self.clock.frac
-        # self._balls = [ball for ball in self._balls if not ball._ded]
         if frac < self._last_frac:
-            if random.random() > .5:
-                self._balls.append(Fireball(self.clock.usbpm * random.randint(1, 10),
-                                            length=random.randint(4, 55),
-                                            hue=random.randint(0, 255)))
+            for i in range(HEIGHT):
+                self._balls[i].append(Fireball(self.clock.usbpm * random.randint(1, 10),
+                                               length=random.randint(4, 55),
+                                               hue=random.randint(0, 255)))
         self._last_frac = frac
 
-        for bb in self._balls:
-            bb.step()
+        hsvs = [[(0, 0, 0) for w in range(WIDTH)] for h in range(HEIGHT)]
+        for i in range(HEIGHT):
+            self._balls[i] = [ball for ball in self._balls[i] if not ball._ded]
 
-        hsvs_set = [x for x in (ball.step() for ball in self._balls)
-                    if x is not None]
+            hsvs_set = [x for x in (ball.step() for ball in self._balls[i])
+                        if x is not None]
+            if hsvs_set:
+                hsvs[i] = [blend_hsvs(x) for x in zip(*hsvs_set)]
+            else:
+                hsvs[i] = [(0, 0, 0) for w in range(WIDTH)]
+        return hsvs
 
-        if hsvs_set:
-
-            hsvs = [blend_hsvs(x) for x in zip(*hsvs_set)]
-
-            # TODO separate strips
-            return [hsvs for h in range(HEIGHT)]
-        else:
-            return None
+    # def step(self, amt=1):
+    #     frac = self.clock.frac
+    #     self._balls = [ball for ball in self._balls if not ball._ded]
+    #     if frac < self._last_frac:
+    #         if random.random() > .5:
+    #             self._balls.append(Fireball(self.clock.usbpm * random.randint(1, 10),
+    #                                         length=random.randint(4, 55),
+    #                                         hue=random.randint(0, 255)))
+    #     self._last_frac = frac
+    #     hsvs_set = [x for x in (ball.step() for ball in self._balls)
+    #                 if x is not None]
+    #     if hsvs_set:
+    #         hsvs = [blend_hsvs(x) for x in zip(*hsvs_set)]
+    #         # TODO separate strips
+    #         return [hsvs for h in range(HEIGHT)]
+    #     else:
+    #         return None
 
 
 class Flash:
@@ -396,10 +467,21 @@ class Flash:
     def __init__(self, clock):
         self.clock = clock
         # frames per color
-        self.fpc = 2
-        self.colors = [(0, 255, 255),
-                       (85, 255, 255),
-                       (170, 255, 255)]
+        self.fpc = 1
+
+        # hsvs
+        self.colors = [
+            (0, 255, 255),
+            (10, 255, 40),
+            (85, 255, 255),
+            (95, 255, 40),
+            (170, 255, 255),
+            (180, 255, 40)
+        ]
+
+        # steps = 20
+        # self.colors = [(x, 255, 255) for x in range(0, 255, 255 // steps)]
+
         self._blink = None
         self._last_frac = 0
 
@@ -479,12 +561,17 @@ def many_hsvs_to_rgb(hsvs):
             #     c3)
             #
             # = (2, 2, 2)
-            if all(hsv[strip][led][2] == 0 for hsv in hsvs):
-                rgb = (0, 0, 0)
-            else:
-                rgbs = [bp.colors.conversions.hsv2rgb(hsv[strip][led])
-                        for hsv in hsvs]
-                rgb = reduce(bp.colors.arithmetic.color_blend, rgbs)
+            try:
+                if all(hsv[strip][led][2] == 0 for hsv in hsvs):
+                    rgb = (0, 0, 0)
+                else:
+                    rgbs = [bp.colors.conversions.hsv2rgb(hsv[strip][led])
+                            for hsv in hsvs]
+                    rgb = reduce(bp.colors.arithmetic.color_blend, rgbs)
+            except Exception as ex:
+                print(ex)
+                import ipdb; ipdb.set_trace()
+                print(ex)
             res[strip][led] = rgb
     return res
 
@@ -492,27 +579,60 @@ def many_hsvs_to_rgb(hsvs):
 class Combo(Matrix):
     """Combine other animations."""
     def __init__(self, *args,
-                 bpm=30,
+                 bpm=100,
                  multiple=1,
                  **kwds):
         super().__init__(*args, **kwds)
         self.clock = Clock(bpm, multiple)
-        self.clock2 = Clock(int(3 / 2 * bpm), 2)
+        # self.clock2 = Clock(int(3 / 2 * bpm), 2)
         # self.clock3 = Clock(4 * bpm, 1)
+
+        self.rc = redis.Redis()
+
+        self._show_flash = False
+        self._show_launcher = False
+        self._show_lb_1 = False
+        self._show_lb_2 = False
+
+        self._last_fetch = 0
+
         self.fireballs = [
+            Flash(self.clock),
             FBLauncher(self.clock),
-            # Looperball(5, self.clock, hue=40),
-            # Looperball(5, self.clock2, hue=100),
-            # Flash(self.clock),
-            # Looperball(30, self.clock, hue=200),
+            Looperball(20, self.clock, hue=0, hue_key="lb_1_hue"),
+            Looperball(20, self.clock, hue=0, hue_key="lb_2_hue", head_off=True),
+            # Looperball(60, self.clock, hue=20),
         ]
+
+    def fetch(self):
+        ts, show_flash, show_launcher, show_lb1, show_lb2 = \
+            map(int, self.rc.mget(
+                "ts", "show_flash", "show_launcher", "show_lb_1", "show_lb_2"))
+        if ts > self._last_fetch:
+            self._show_flash = bool(show_flash)
+            self._show_launcher = bool(show_launcher)
+            self._show_lb_1 = bool(show_lb1)
+            self._show_lb_2 = bool(show_lb2)
+            self._last_fetch = ts
 
     def step(self, amt=1):
         self.clock.update()
-        self.clock2.update()
+        # self.clock2.update()
         # self.clock3.update()
 
-        hsv_sets = [ball.step() for ball in self.fireballs]
+        self.fetch()
+
+        fireballs = []
+        if self._show_flash:
+            fireballs.append(self.fireballs[0])
+        if self._show_launcher:
+            fireballs.append(self.fireballs[1])
+        if self._show_lb_1:
+            fireballs.append(self.fireballs[2])
+        if self._show_lb_2:
+            fireballs.append(self.fireballs[3])
+
+        hsv_sets = [ball.step() for ball in fireballs]
         hsv_sets = [x for x in hsv_sets if x is not None]
         if not hsv_sets:
             return
@@ -678,3 +798,290 @@ class Fill(Matrix):
     def step(self, amt=1):
         self.fetch()
         self.layout.fillHSV((self.hue, self.sat, self.val))
+
+RED_HUE = 0
+GREEN_HUE = 89
+
+from collections import deque
+
+
+class Blinkers:
+    def __init__(self):
+        self.decay = 4
+        self.stuff = []
+
+    def add(self, dex=None, bright=255):
+        if dex is None:
+            dex = random.randint(0, WIDTH - 1)
+        self.stuff.append([dex, 255])
+
+    # def __in__(self, needle):
+    #     return needle in set(x[0] for x in self.stuff)
+
+    def __len__(self):
+        return len(self.stuff)
+
+    def step(self, amt=1):
+        chop = 0
+        for i in range(len(self.stuff)):
+            self.stuff[i][1] -= self.decay
+            if self.stuff[i][1] <= 0:
+                chop = i + 1
+        self.stuff = self.stuff[chop:]
+
+
+class Xmas(Matrix):
+    def __init__(self, *args,
+                 bpm=100,
+                 multiple=1,
+                 **kwds):
+        super().__init__(*args, **kwds)
+        self.clock = Clock(bpm, multiple)
+        self.last_frac = 1
+        self.beat = 0
+        # self.rc = redis.Redis()
+
+        self.sparkprob = 10
+        self._last_fetch = 0
+        self.rc = redis.Redis()
+
+        self.bb = Blinkers()
+        self.num_blink = int(.05 * WIDTH)
+        for b in range(self.num_blink):
+            self.bb.add(bright=int(b / self.num_blink * 255))
+
+    def fetch(self):
+        got = self.rc.mget("ts", "sparkprob")
+        ts = int(got[0])
+        if ts > self._last_fetch:
+            if got[1]:
+                self.sparkprob = int(got[1])
+            self._last_fetch = ts
+
+    def step(self, amt=1):
+        self.fetch()
+        self.clock.update()
+        frac = self.clock.frac
+        if self.clock.frac < self.last_frac:
+            self.beat = (self.beat + 1) % 12
+        # print(self.beat)
+        self.last_frac = frac
+
+        """
+        00: R    / G
+        01: R    / G->W
+        02: R    / W
+        03: R->W / W
+        04: W    / W
+        05: W->G / W->R
+        06: G    / R
+        07: G    / R->W
+        08: G    / W
+        09: G->W / W
+        10: W    / W
+        11: W->R / W->G
+        """
+
+        # blink1 = set(2 * random.randint(0, WIDTH // 2) for x in range(num_blink // 2))
+        # blink2 = set(1 + 2 * random.randint(0, WIDTH // 2 - 1)
+        #              for x in range(num_blink // 2))
+
+        # if len(self.bb) < self.num_blink:
+        #     self.bb.add()
+        #     # print(self.bb.stuff)
+
+        self.bb.step()
+
+        hsvs = [[(0, 0, 0) for ww in range(WIDTH)] for hh in range(HEIGHT)]
+
+        # hack because R+G too close looks yellow
+        mangle_size = 4
+        def get_eo(ww):
+            return ww % (2 * mangle_size) < mangle_size
+
+        for hh in range(HEIGHT):
+            for ww in range(WIDTH):
+                eo = get_eo(ww)
+                # stay red green
+                if self.beat == 0:
+                    if eo:
+                        hsv = (RED_HUE, 255, 255)
+                    else:
+                        hsv = (GREEN_HUE, 255, 255)
+                # turn green white
+                if self.beat == 1:
+                    if eo:
+                        hsv = (RED_HUE, 255, 255)
+                    else:
+                        hsv = (GREEN_HUE, 255 - int(255 * frac), 255)
+                # stay red white
+                if self.beat == 2:
+                    if eo:
+                        hsv = (RED_HUE, 255, 255)
+                    else:
+                        hsv = (GREEN_HUE, 0, 255)
+                # turn red white
+                if self.beat == 3:
+                    if eo:
+                        hsv = (RED_HUE, 255 - int(255 * frac), 255)
+                    else:
+                        hsv = (GREEN_HUE, 0, 255)
+                # stay white white
+                if self.beat == 4:
+                    if eo:
+                        hsv = (RED_HUE, 0, 255)
+                    else:
+                        hsv = (GREEN_HUE, 0, 255)
+                # turn green red
+                if self.beat == 5:
+                    if eo:
+                        hsv = (GREEN_HUE, int(255 * frac), 255)
+                    else:
+                        hsv = (RED_HUE, int(255 * frac), 255)
+                # stay green red
+                if self.beat == 6:
+                    if eo:
+                        hsv = (GREEN_HUE, 255, 255)
+                    else:
+                        hsv = (RED_HUE, 255, 255)
+                # turn red white
+                if self.beat == 7:
+                    if eo:
+                        hsv = (GREEN_HUE, 255, 255)
+                    else:
+                        hsv = (RED_HUE, 255 - int(255 * frac), 255)
+                # stay green white
+                if self.beat == 8:
+                    if eo:
+                        hsv = (GREEN_HUE, 255, 255)
+                    else:
+                        hsv = (RED_HUE, 0, 255)
+                # turn green white
+                if self.beat == 9:
+                    if eo:
+                        hsv = (GREEN_HUE, 255 - int(255 * frac), 255)
+                    else:
+                        hsv = (RED_HUE, 0, 255)
+                # stay white
+                if self.beat == 10:
+                    if eo:
+                        hsv = (GREEN_HUE, 0, 255)
+                    else:
+                        hsv = (RED_HUE, 0, 255)
+                # turn red green
+                if self.beat == 11:
+                    if eo:
+                        hsv = (RED_HUE, int(255 * frac), 255)
+                    else:
+                        hsv = (GREEN_HUE, int(255 * frac), 255)
+
+
+                # b1c_hsv = (RED_HUE, 0, 255)
+                # b2c_hsv = (GREEN_HUE, 0, 255)
+
+                # tt = 20
+                # if ww < tt:
+                #     rgb = (255, 255, ww * (255 / tt))
+
+                hsvs[hh][ww] = hsv
+                # if ww % 2 == 0 and ww in self.blink1:
+                #     hsv = b1c_hsv
+                # if ww % 2 == 1 and ww in self.blink2:
+                #     hsv = b2c_hsv
+
+        # rgb = bp.colors.conversions.hsv2rgb(hsv)
+
+        bb_hsvs = [[(0, 0, 0) for ww in range(WIDTH)] for hh in range(HEIGHT)]
+        # b_s_scale = 2 * abs(.5 - frac)
+        b_s_scale = math.sin(frac * math.pi)
+
+        if self.beat in {0, 6, 2, 8, 4, 10, 3, 9, 1, 7, 5, 11}:
+            if b_s_scale > self.sparkprob * random.random():
+                self.bb.add()
+
+        # printme = '' + str(self.beat) + ' -- '
+        # for _, br in self.bb.stuff:
+        #     if br < 50:
+        #         printme += '.'
+        #     elif br < 100:
+        #         printme += 'o'
+        #     elif br < 150:
+        #         printme += 'x'
+        #     elif br < 200:
+        #         printme += '+'
+        #     elif br < 250:
+        #         printme += 'O'
+        #     elif br < 300:
+        #         printme += 'X'
+        #     else:
+        #         printme += '%'
+        # print(printme)
+
+        num_floods = 4
+        flood_hack = hsvs[0][:mangle_size * num_floods:num_floods]
+
+        for ww, bright in self.bb.stuff:
+            eo = get_eo(ww)
+            for hh in range(HEIGHT):
+                # red/green, do white sparkles
+                if self.beat in {0, 6, 1, 7, 2, 8}:
+                    # bb_hsvs[hh][ww] = (RED_HUE, 0, int(b_s_scale * bright))
+                    bb_hsvs[hh][ww] = (RED_HUE, 0, bright)
+                # # red/white, do green sparkles
+                # if self.beat == 2:
+                #     hsvs[hh][ww] = (GREEN_HUE, int(b_s_scale * bright), 255)
+                #     bb_hsvs[hh][ww] = (GREEN_HUE, 0, int(b_s_scale * bright))
+                # RW -> WW, do red sparkles
+                if self.beat == 3:
+                    hsvs[hh][ww] = (RED_HUE, bright, 255)
+                    bb_hsvs[hh][ww] = (RED_HUE, bright, 255)
+                    # bb_hsvs[hh][ww] = (RED_HUE, 255, int(b_s_scale * bright))
+
+                # WW and WW -> GR, do GR sparkles
+                if self.beat in {4, 5}:
+                    if eo:
+                        hsvs[hh][ww] = (GREEN_HUE, bright, 255)
+                        bb_hsvs[hh][ww] = (GREEN_HUE, bright, 255)
+                    else:
+                        hsvs[hh][ww] = (RED_HUE, bright, 255)
+                        bb_hsvs[hh][ww] = (RED_HUE, bright, 255)
+
+
+                # # green/white, do red sparkles
+                # if self.beat == 8:
+                #     hsvs[hh][ww] = (RED_HUE, int(b_s_scale * bright), 255)
+                #     bb_hsvs[hh][ww] = (RED_HUE, 0, int(b_s_scale * bright))
+                # GW -> WW, do G sparkles
+                if self.beat == 9:
+                    hsvs[hh][ww] = (GREEN_HUE, bright, 255)
+                    bb_hsvs[hh][ww] = (GREEN_HUE, bright, 255)
+                # WW and WW -> RG, do RG sparkles
+                if self.beat in {10, 11}:
+                    if eo:
+                        hsvs[hh][ww] = (RED_HUE, bright, 255)
+                        bb_hsvs[hh][ww] = (RED_HUE, bright, 255)
+                    else:
+                        hsvs[hh][ww] = (GREEN_HUE, bright, 255)
+                        bb_hsvs[hh][ww] = (GREEN_HUE, bright, 255)
+
+
+        # garage lights are spaced wider, do 4x garage to 1x roof lights
+        num_garage_leds = 50
+        def mangle(orig_hsvs):
+            to_replace = len(orig_hsvs[0]) // mangle_size
+            orig_hsvs[1][:to_replace] =\
+                orig_hsvs[0][:num_garage_leds * mangle_size:mangle_size]
+            for i in range(num_garage_leds, len(orig_hsvs[1])):
+                orig_hsvs[1][i] = (0, 0, 0)
+
+        mangle(hsvs)
+        mangle(bb_hsvs)
+
+        for i in range(len(flood_hack)):
+            hsvs[1][num_garage_leds + i] = flood_hack[i]
+
+        rgbs = many_hsvs_to_rgb([hsvs, bb_hsvs])
+        for h, strip in enumerate(rgbs):
+            for w in range(len(strip)):
+                rgb = strip[w]
+                self.layout.set(w, h, rgb)

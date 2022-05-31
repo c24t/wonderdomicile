@@ -1,0 +1,30 @@
+2021-09-26 (Sun Sep 26)
+--
+ember color scaling doesn't really work -- one of RGB goes to 0 when dim, color changes when you scale back up
+
+TODOs:
+small scale:
+- sync embers animation to bpm
+- combine BPM-ified animations, turn each up/down via (redis) args
+large:
+- redis website
+
+
+
+
+2021-09-24 (Fri Sep 24)
+--
+
+controller.ino leds mapping looks right:
+
+  leds[(strip * NUM_LEDS_PER_STRIP) + light] = ...
+
+layout mapping to pixel number is wrong -- e.g. lights up 2 LEDs on strip 0 (0 on strip 1) when setting 1 light on ach strip
+
+setting layout.serpentine=false didn't help alone, also need to flip row/cols
+then it works!
+
+matrix.coord_map is probably getting set wrong, check it out to debug
+https://github.com/ManiacalLabs/BiblioPixel/blob/master/bibliopixel/layout/matrix.py#L33
+
+ignoring for now, just flipping X/Y and getting on with life
